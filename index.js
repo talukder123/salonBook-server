@@ -25,7 +25,17 @@ export async function connectToMongoDB() {
 const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salonBook")
 
-const studioCollection = db.collection("services")
+// Database collections --
+const servicesCollection = db.collection("services")
+const appointmentsCollection = db.collection("appointments")
+const transactionsCollection = db.collection("transactions")
+
+
+// /services
+app.get('/services', (req, res) => {
+    const result = servicesCollection.find().toArray();
+    res.send(result)
+})
 
 
 

@@ -32,10 +32,77 @@ const transactionsCollection = db.collection("transactions")
 
 
 // /services
-app.get('/services', (req, res) => {
-    const result = servicesCollection.find().toArray();
+app.get('/services', async(req, res) => {
+    const result = await servicesCollection.find().toArray();
     res.send(result)
 })
+
+// http://localhost:5000/services
+app.post('/services', async (req, res) => {
+  try {
+    const {
+      serviceName,
+      category,
+      description,
+      price,
+      duration,
+      image
+    } = req.body;
+
+
+    if (
+      !serviceName ||
+      !category ||
+      !description ||
+      !image ||
+      price === undefined ||
+      duration === undefined
+    ) {
+      return res.status(400).send({
+        message: 'All fields are required'
+      });
+    }
+
+    // Validate price and duration
+    if (
+      typeof price !== 'number' ||
+      price <= 0 ||
+      typeof duration !== 'number' ||
+      duration <= 0
+    ) {
+      return res.status(400).send({
+        message: 'Price and duration must be positive numbers'
+      });
+    }
+
+    const newService = {
+      serviceName: serviceName.trim(),
+      category,
+      description: description.trim(),
+      price,
+      duration,
+      image,
+      status: 'active',
+      createdAt: new Date()
+    };
+
+    const result = await servicesCollection.insertOne(newService);
+
+    res.status(201).send({
+      success: true,
+      message: 'Service created successfully',
+      insertedId: result.insertedId
+    });
+
+  } catch (error) {
+    console.error('Service creation failed:', error);
+
+    res.status(500).send({
+      success: false,
+      message: 'Failed to create service'
+    });
+  }
+});
 
 
 

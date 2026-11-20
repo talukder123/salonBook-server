@@ -32,10 +32,21 @@ const transactionsCollection = db.collection("transactions")
 
 
 // /services
-app.get('/services', async(req, res) => {
-    const result = await servicesCollection.find().toArray();
-    res.send(result)
-})
+app.get('/services', async (req, res) => {
+  try {
+    const { category } = req.query;
+
+    const filter = category ? { category } : {};
+
+    const result = await servicesCollection.find(filter).toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch services"
+    });
+  }
+});
 
 // http://localhost:5000/services
 app.post('/services', async (req, res) => {
@@ -49,11 +60,10 @@ app.post('/services', async (req, res) => {
       image
     } = req.body;
 
-
     if (
-      !serviceName ||
+      !serviceName?.trim() ||
       !category ||
-      !description ||
+      !description?.trim() ||
       !image ||
       price === undefined ||
       duration === undefined
@@ -63,11 +73,26 @@ app.post('/services', async (req, res) => {
       });
     }
 
-    // Validate price and duration
+    const categories = [
+      'Hair',
+      'Skin Care',
+      'Nail Care',
+      'Makeup',
+      'Spa & Massage'
+    ];
+
+    if (!categories.includes(category)) {
+      return res.status(400).send({
+        message: 'Invalid category'
+      });
+    }
+
     if (
       typeof price !== 'number' ||
+      !Number.isFinite(price) ||
       price <= 0 ||
       typeof duration !== 'number' ||
+      !Number.isInteger(duration) ||
       duration <= 0
     ) {
       return res.status(400).send({

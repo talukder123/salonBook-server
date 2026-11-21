@@ -31,7 +31,7 @@ const appointmentsCollection = db.collection("appointments")
 const transactionsCollection = db.collection("transactions")
 
 
-// /services
+// http://localhost:5000/services
 app.get('/services', async (req, res) => {
   try {
     const { category } = req.query;
@@ -130,7 +130,6 @@ app.post('/services', async (req, res) => {
     });
   }
 });
-
 
 // http://localhost:5000/services/:id
 app.patch('/services/:id', async (req, res) => {
@@ -235,6 +234,44 @@ app.patch('/services/:id', async (req, res) => {
       message: 'Failed to update service'
     });
   }
+});
+
+// http://localhost:5000/services/:id
+app.delete('/services/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({
+                success: false,
+                message: 'Invalid service ID'
+            });
+        }
+
+        const result = await servicesCollection.deleteOne({
+            _id: new ObjectId(id)
+        });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).send({
+                success: false,
+                message: 'Service not found'
+            });
+        }
+
+        res.send({
+            success: true,
+            message: 'Service deleted successfully'
+        });
+
+    } catch (error) {
+        console.error('Service deletion failed:', error);
+
+        res.status(500).send({
+            success: false,
+            message: 'Failed to delete service'
+        });
+    }
 });
 
 

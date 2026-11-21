@@ -74,11 +74,13 @@ app.post('/services', async (req, res) => {
     }
 
     const categories = [
-      'Hair',
-      'Skin Care',
-      'Nail Care',
-      'Makeup',
-      'Spa & Massage'
+      "Haircut & Styling",
+      "Hair Coloring",
+      "Hair Treatment",
+      "Facial & Skincare",
+      "Makeup",
+      "Manicure & Pedicure",
+      "Spa & Massage",
     ];
 
     if (!categories.includes(category)) {
@@ -131,6 +133,6 @@ app.post('/services', async (req, res) => {
 
 
 
-app.listen(process.env.PORT || 5000, ()=> {
-    console.log("Server is cooking on port 5000");
+app.listen(process.env.PORT || 5000, () => {
+  console.log("Server is cooking on port 5000");
 })

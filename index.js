@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId  } from "mongodb";
 
 import express from 'express';
 import cors from 'cors';
@@ -131,6 +131,111 @@ app.post('/services', async (req, res) => {
   }
 });
 
+
+// http://localhost:5000/services/:id
+app.patch('/services/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        message: 'Invalid service ID'
+      });
+    }
+
+    const {
+      serviceName,
+      category,
+      description,
+      price,
+      duration,
+      image,
+      status
+    } = req.body;
+
+    const categories = [
+      "Haircut & Styling",
+      "Hair Coloring",
+      "Hair Treatment",
+      "Facial & Skincare",
+      "Makeup",
+      "Manicure & Pedicure",
+      "Spa & Massage",
+    ];
+
+    if (category && !categories.includes(category)) {
+      return res.status(400).send({
+        message: 'Invalid category'
+      });
+    }
+
+    if (
+      price !== undefined &&
+      (typeof price !== 'number' || !Number.isFinite(price) || price <= 0)
+    ) {
+      return res.status(400).send({
+        message: 'Price must be a positive number'
+      });
+    }
+
+    if (
+      duration !== undefined &&
+      (!Number.isInteger(duration) || duration <= 0)
+    ) {
+      return res.status(400).send({
+        message: 'Duration must be a positive integer'
+      });
+    }
+
+    if (status !== undefined && !['active', 'inactive'].includes(status)) {
+      return res.status(400).send({
+        message: 'Invalid status'
+      });
+    }
+
+    const updateData = {};
+
+    if (serviceName !== undefined) updateData.serviceName = serviceName.trim();
+    if (category !== undefined) updateData.category = category;
+    if (description !== undefined) updateData.description = description.trim();
+    if (price !== undefined) updateData.price = price;
+    if (duration !== undefined) updateData.duration = duration;
+    if (image !== undefined) updateData.image = image;
+    if (status !== undefined) updateData.status = status;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).send({
+        message: 'No fields provided for update'
+      });
+    }
+
+    updateData.updatedAt = new Date();
+
+    const result = await servicesCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    if (!result.matchedCount) {
+      return res.status(404).send({
+        message: 'Service not found'
+      });
+    }
+
+    res.send({
+      success: true,
+      message: 'Service updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Service update failed:', error);
+
+    res.status(500).send({
+      success: false,
+      message: 'Failed to update service'
+    });
+  }
+});
 
 
 app.listen(process.env.PORT || 5000, () => {

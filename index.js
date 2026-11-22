@@ -4,10 +4,17 @@ import { MongoClient, ObjectId } from "mongodb";
 import express from 'express';
 import cors from 'cors';
 
+import verifyToken from "./middlewares/verifyToken.js";
+import verifyAdmin from "./middlewares/verifyAdmin.js";
+import verifyCustomer from './middlewares/verifyCustomer.js';
+
 const app = express();
 
 // middleware!
-app.use(cors())
+app.use(cors({
+  origin: "http://localhost:3000",
+  credentials: true,
+}));
 app.use(express.json())
 
 const client = new MongoClient(process.env.MONGO_DB_URI);
@@ -337,7 +344,8 @@ app.get('/featured-services', async (req, res) => {
 // --- appointment ---
 
 // http://localhost:5000/appointments
-app.post("/appointments", async (req, res) => {
+
+app.post("/appointments", verifyToken, verifyCustomer, async (req, res) => {
   try {
     const { serviceId, appointmentDate, timeSlot, message } = req.body;
 
@@ -354,6 +362,15 @@ app.post("/appointments", async (req, res) => {
         message: "Invalid service ID.",
       });
     }
+
+    // Get authenticated customer information from JWT
+    const customerId = req.user.id;
+
+    const customer = {
+      name: req.user.name,
+      email: req.user.email,
+      image: req.user.image || "",
+    };
 
     // Find service
     const service = await servicesCollection.findOne({
@@ -380,20 +397,24 @@ app.post("/appointments", async (req, res) => {
       serviceId,
       appointmentDate,
       timeSlot,
-      status: { $in: ["pending", "confirmed"] },
+      $or: [
+        { status: "confirmed" },
+        { customerId, status: "pending" },
+      ],
     });
 
     if (existingAppointment) {
       return res.status(409).send({
         success: false,
-        message: "This time slot is already booked.",
+        message: "This time slot is already booked or requested.",
       });
     }
 
     // Create appointment
     const appointmentData = {
       serviceId,
-      customerId: "CUSTOMER_ID_FROM_AUTH",
+      customerId,
+      customer,
       appointmentDate,
       timeSlot,
       message: message || "",
@@ -420,6 +441,7 @@ app.post("/appointments", async (req, res) => {
     });
   }
 });
+
 
 // --- Get All Appointments (Admin) ---
 // GET: http://localhost:5000/appointments
@@ -512,7 +534,108 @@ app.get("/appointments", async (req, res) => {
 });
 
 
+ // PATCH: http://localhost:5000/appointments/:id
+app.patch("/appointments/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
-app.listen(process.env.PORT || 5000, () => {
-  console.log("Server is cooking on port 5000");
-})
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid appointment ID.",
+      });
+    }
+
+    // Validate Status
+    if (!["confirmed", "cancelled"].includes(status)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid appointment status.",
+      });
+    }
+
+    // Find Appointment
+    const appointment = await appointmentsCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!appointment) {
+      return res.status(404).send({
+        success: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    // Only Pending Appointments Can Be Confirmed
+    if (status === "confirmed" && appointment.status !== "pending") {
+      return res.status(400).send({
+        success: false,
+        message: "Only pending appointments can be confirmed.",
+      });
+    }
+
+    // Only Pending or Confirmed Appointments Can Be Cancelled
+    if (
+      status === "cancelled" &&
+      !["pending", "confirmed"].includes(appointment.status)
+    ) {
+      return res.status(400).send({
+        success: false,
+        message: "This appointment cannot be cancelled.",
+      });
+    }
+
+    // Update Appointment Status
+    await appointmentsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status,
+        },
+      }
+    );
+
+    res.status(200).send({
+      success: true,
+      message:
+        status === "confirmed"
+          ? "Appointment confirmed successfully."
+          : "Appointment cancelled successfully.",
+    });
+  } catch (error) {
+    console.error("Appointment status update failed:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to update appointment status.",
+    });
+  }
+});
+
+
+// --- GET appointment by User ---
+
+// ==== TEST APIs ====
+app.get("/protected", verifyToken, (req, res) => {
+  res.status(200).json({
+    message: "Token verified successfully!",
+    user: req.user,
+  });
+});
+
+app.get("/admin-test", verifyToken, verifyAdmin, (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Welcome Admin!",
+    user: req.user,
+  });
+});
+
+
+
+const PORT = Number(process.env.PORT) || 5000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server is running on port ${PORT}`);
+});

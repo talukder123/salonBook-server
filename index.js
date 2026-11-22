@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { MongoClient, ObjectId  } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 import express from 'express';
 import cors from 'cors';
@@ -238,41 +238,105 @@ app.patch('/services/:id', async (req, res) => {
 
 // http://localhost:5000/services/:id
 app.delete('/services/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        if (!ObjectId.isValid(id)) {
-            return res.status(400).send({
-                success: false,
-                message: 'Invalid service ID'
-            });
-        }
-
-        const result = await servicesCollection.deleteOne({
-            _id: new ObjectId(id)
-        });
-
-        if (result.deletedCount === 0) {
-            return res.status(404).send({
-                success: false,
-                message: 'Service not found'
-            });
-        }
-
-        res.send({
-            success: true,
-            message: 'Service deleted successfully'
-        });
-
-    } catch (error) {
-        console.error('Service deletion failed:', error);
-
-        res.status(500).send({
-            success: false,
-            message: 'Failed to delete service'
-        });
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: 'Invalid service ID'
+      });
     }
+
+    const result = await servicesCollection.deleteOne({
+      _id: new ObjectId(id)
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        success: false,
+        message: 'Service not found'
+      });
+    }
+
+    res.send({
+      success: true,
+      message: 'Service deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Service deletion failed:', error);
+
+    res.status(500).send({
+      success: false,
+      message: 'Failed to delete service'
+    });
+  }
 });
+
+// http://localhost:5000/services/:id
+app.get("/services/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid service ID",
+      });
+    }
+
+    const service = await servicesCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    // Check if service exists
+    if (!service) {
+      return res.status(404).send({
+        success: false,
+        message: "Service not found",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      service,
+    });
+  } catch (error) {
+    console.error("Failed to fetch service:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch service details",
+    });
+  }
+});
+
+
+// --- Homepage ---
+app.get('/featured-services', async (req, res) => {
+  try {
+    const result = await servicesCollection
+      .find({ status: 'active' })
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .toArray();
+
+    res.send(result);
+
+  } catch (error) {
+    console.error('Featured services fetching failed:', error);
+
+    res.status(500).send({
+      success: false,
+      message: 'Failed to fetch featured services'
+    });
+  }
+});
+
+// --- appointment ---
+
+app.get("")
 
 
 app.listen(process.env.PORT || 5000, () => {

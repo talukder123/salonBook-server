@@ -27,7 +27,7 @@ const db = mongoClient.db("salonBook")
 
 // Database collections --
 const servicesCollection = db.collection("services")
-const appointmentsCollection = db.collection("appointments")
+const appointmentsCollection = db.collection("appointments");
 const transactionsCollection = db.collection("transactions")
 
 
@@ -336,7 +336,181 @@ app.get('/featured-services', async (req, res) => {
 
 // --- appointment ---
 
-app.get("")
+// http://localhost:5000/appointments
+app.post("/appointments", async (req, res) => {
+  try {
+    const { serviceId, appointmentDate, timeSlot, message } = req.body;
+
+    if (!serviceId || !appointmentDate || !timeSlot) {
+      return res.status(400).send({
+        success: false,
+        message: "Please provide appointment date and time slot.",
+      });
+    }
+
+    if (!ObjectId.isValid(serviceId)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid service ID.",
+      });
+    }
+
+    // Find service
+    const service = await servicesCollection.findOne({
+      _id: new ObjectId(serviceId),
+    });
+
+    if (!service) {
+      return res.status(404).send({
+        success: false,
+        message: "Service not found.",
+      });
+    }
+
+    // Check service availability
+    if (service.status !== "active") {
+      return res.status(400).send({
+        success: false,
+        message: "This service is currently unavailable.",
+      });
+    }
+
+    // Check duplicate appointment
+    const existingAppointment = await appointmentsCollection.findOne({
+      serviceId,
+      appointmentDate,
+      timeSlot,
+      status: { $in: ["pending", "confirmed"] },
+    });
+
+    if (existingAppointment) {
+      return res.status(409).send({
+        success: false,
+        message: "This time slot is already booked.",
+      });
+    }
+
+    // Create appointment
+    const appointmentData = {
+      serviceId,
+      customerId: "CUSTOMER_ID_FROM_AUTH",
+      appointmentDate,
+      timeSlot,
+      message: message || "",
+      servicePrice: service.price,
+      paymentStatus: "unpaid",
+      status: "pending",
+      createdAt: new Date(),
+    };
+
+    const result = await appointmentsCollection.insertOne(appointmentData);
+
+    res.status(201).send({
+      success: true,
+      message: "Your appointment request has been submitted successfully!",
+      appointmentId: result.insertedId,
+    });
+
+  } catch (error) {
+    console.error("Appointment creation failed:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to submit appointment request.",
+    });
+  }
+});
+
+// --- Get All Appointments (Admin) ---
+// GET: http://localhost:5000/appointments
+
+app.get("/appointments", async (req, res) => {
+  try {
+    const appointments = await appointmentsCollection
+      .aggregate([
+        // Get Customer Information
+        {
+          $lookup: {
+            from: "user",
+            let: { customerId: "$customerId" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: [{ $toString: "$_id" }, "$$customerId"],
+                  },
+                },
+              },
+              {
+                $project: {
+                  name: 1,
+                  email: 1,
+                  image: 1,
+                },
+              },
+            ],
+            as: "customer",
+          },
+        },
+
+        // Get Service Information
+        {
+          $lookup: {
+            from: "services",
+            let: { serviceId: "$serviceId" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: [{ $toString: "$_id" }, "$$serviceId"],
+                  },
+                },
+              },
+              {
+                $project: {
+                  serviceName: 1,
+                  category: 1,
+                  price: 1,
+                  duration: 1,
+                  image: 1,
+                },
+              },
+            ],
+            as: "service",
+          },
+        },
+
+        // Convert arrays into objects
+        {
+          $addFields: {
+            customer: { $arrayElemAt: ["$customer", 0] },
+            service: { $arrayElemAt: ["$service", 0] },
+          },
+        },
+
+        // Latest appointments first
+        {
+          $sort: { createdAt: -1 },
+        },
+      ])
+      .toArray();
+
+    res.status(200).send({
+      success: true,
+      message: "Appointments fetched successfully.",
+      appointments,
+    });
+
+  } catch (error) {
+    console.error("Failed to fetch appointments:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch appointments.",
+    });
+  }
+});
+
 
 
 app.listen(process.env.PORT || 5000, () => {

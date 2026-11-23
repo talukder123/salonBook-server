@@ -7,6 +7,7 @@ import cors from 'cors';
 import verifyToken from "./middlewares/verifyToken.js";
 import verifyAdmin from "./middlewares/verifyAdmin.js";
 import verifyCustomer from './middlewares/verifyCustomer.js';
+import verifyActiveUser from "./middlewares/verifyActiveUser.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ export async function connectToMongoDB() {
 const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salonBook")
 
+app.locals.db = db;
 // Database collections --
 const servicesCollection = db.collection("services")
 const appointmentsCollection = db.collection("appointments");
@@ -88,7 +90,7 @@ app.get('/services', async (req, res) => {
 });
 
 // http://localhost:5000/services
-app.post('/services', verifyToken, verifyAdmin, async (req, res) => {
+app.post('/services', verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
   try {
     const {
       serviceName,
@@ -171,7 +173,7 @@ app.post('/services', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // http://localhost:5000/services/:id
-app.patch('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
+app.patch('/services/:id', verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -359,7 +361,7 @@ app.patch('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // http://localhost:5000/services/:id
-app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
+app.delete('/services/:id', verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -397,7 +399,7 @@ app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // http://localhost:5000/services/:id
-app.get("/services/:id", async (req, res) => {
+app.get("/services/:id", verifyToken, verifyActiveUser, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -460,7 +462,7 @@ app.get('/featured-services', async (req, res) => {
 
 // http://localhost:5000/appointments
 
-app.post("/appointments", verifyToken, verifyCustomer, async (req, res) => {
+app.post("/appointments", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
   try {
     const { serviceId, appointmentDate, timeSlot, message } = req.body;
 
@@ -559,7 +561,7 @@ app.post("/appointments", verifyToken, verifyCustomer, async (req, res) => {
 // --- Get All Appointments (Admin) ---
 // GET: http://localhost:5000/appointments
 
-app.get("/appointments", async (req, res) => {
+app.get("/appointments", verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
   try {
     const appointments = await appointmentsCollection
       .aggregate([
@@ -647,7 +649,7 @@ app.get("/appointments", async (req, res) => {
 });
 
 // PATCH: http://localhost:5000/appointments/:id
-app.patch("/appointments/:id", async (req, res) => {
+app.patch("/appointments/:id", verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -763,7 +765,7 @@ app.patch("/appointments/:id", async (req, res) => {
 
 // --- Get Appointments by OWN (User) ---
 // own appointments
-app.get("/my-appointments", verifyToken, verifyCustomer, async (req, res) => {
+app.get("/my-appointments", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
   try {
     const customerId = req.user.id;
 
@@ -813,7 +815,7 @@ app.get("/my-appointments", verifyToken, verifyCustomer, async (req, res) => {
 );
 
 // own appintment details page
-app.get("/my-appointments/:id", verifyToken, verifyCustomer, async (req, res) => {
+app.get("/my-appointments/:id", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
   try {
     const { id } = req.params;
     const customerId = req.user.id;
@@ -875,7 +877,7 @@ app.get("/my-appointments/:id", verifyToken, verifyCustomer, async (req, res) =>
 );
 
 // to cancel own appointment if status == "pending"
-app.patch("/my-appointments/:id/cancel", verifyToken, verifyCustomer, async (req, res) => {
+app.patch("/my-appointments/:id/cancel", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
   try {
     const { id } = req.params;
     const customerId = req.user.id;

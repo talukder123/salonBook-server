@@ -21,6 +21,8 @@ const verifyToken = async (req, res, next) => {
 
     req.user = payload;
 
+    console.log("JWT PAYLOAD:", payload);
+
     next();
   } catch (error) {
     console.error("JWT Verification Error:", error.message);

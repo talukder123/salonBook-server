@@ -957,6 +957,379 @@ app.get("/admin-test", verifyToken, verifyAdmin, (req, res) => {
   });
 });
 
+// -------------------------------
+
+// ADMIN manage-users
+app.get("/users", verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
+  try {
+    // Fetch all registered customers
+    const users = await db
+      .collection("user")
+      .find(
+        { role: "user" },
+        {
+          projection: {
+            name: 1,
+            email: 1,
+            image: 1,
+            phone: 1,
+            role: 1,
+            isBlocked: 1,
+            createdAt: 1,
+          },
+        }
+      )
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    // Add appointment count for each customer
+    const usersWithAppointments = await Promise.all(
+      users.map(async (user) => {
+        const appointmentsCount =
+          await appointmentsCollection.countDocuments({
+            customerId: user._id.toString(),
+          });
+
+        return {
+          ...user,
+          appointmentsCount,
+        };
+      })
+    );
+
+    res.status(200).send({
+      success: true,
+      message: "Users fetched successfully.",
+      users: usersWithAppointments,
+    });
+  } catch (error) {
+    console.error("Fetch Users Error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch users.",
+    });
+  }
+}
+);
+
+app.patch("/users/:id", verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlocked } = req.body;
+
+    // Validate user ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid user ID.",
+      });
+    }
+
+    // Validate request body
+    if (typeof isBlocked !== "boolean") {
+      return res.status(400).send({
+        success: false,
+        message: "isBlocked must be a boolean value.",
+      });
+    }
+
+    // Find customer
+    const user = await db.collection("user").findOne({
+      _id: new ObjectId(id),
+      role: "user",
+    });
+
+    if (!user) {
+      return res.status(404).send({
+        success: false,
+        message: "Customer not found.",
+      });
+    }
+
+    // Update customer account status
+    const result = await db.collection("user").updateOne(
+      {
+        _id: user._id,
+        role: "user",
+      },
+      {
+        $set: {
+          isBlocked,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(200).send({
+        success: true,
+        message: `Customer is already ${isBlocked ? "blocked" : "active"}.`,
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      message: `Customer ${isBlocked ? "blocked" : "unblocked"} successfully.`,
+    });
+  } catch (error) {
+    console.error("Update User Status Error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to update customer status.",
+    });
+  }
+}
+);
+
+
+// ----- Customer profile
+app.get("/profile", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const userFilter = ObjectId.isValid(userId)
+      ? {
+        $or: [
+          { _id: userId },
+          { _id: new ObjectId(userId) },
+        ],
+        role: "user",
+      }
+      : { _id: userId, role: "user" };
+
+    const user = await db.collection("user").findOne(
+      userFilter,
+      {
+        projection: {
+          name: 1,
+          email: 1,
+          image: 1,
+          role: 1,
+          createdAt: 1,
+        },
+      }
+    );
+
+    if (!user) {
+      return res.status(404).send({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    console.error("Get Profile Error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch profile.",
+    });
+  }
+}
+);
+
+
+app.patch("/profile", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, image } = req.body;
+
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).send({
+        success: false,
+        message: "Name is required.",
+      });
+    }
+
+    if (typeof image !== "string") {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid profile image.",
+      });
+    }
+
+    const userFilter = ObjectId.isValid(userId)
+      ? {
+        $or: [
+          { _id: userId },
+          { _id: new ObjectId(userId) },
+        ],
+        role: "user",
+      }
+      : {
+        _id: userId,
+        role: "user",
+      };
+
+    const user = await db.collection("user").findOne(userFilter);
+
+    if (!user) {
+      return res.status(404).send({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    await db.collection("user").updateOne(
+      { _id: user._id, role: "user" },
+      {
+        $set: {
+          name: name.trim(),
+          image,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    return res.status(200).send({
+      success: true,
+      message: "Profile updated successfully.",
+    });
+  } catch (error) {
+    console.error("Profile Update Error:", error);
+
+    return res.status(500).send({
+      success: false,
+      message: "Failed to update profile.",
+    });
+  }
+}
+);
+
+//------ admin profile
+
+app.get("/admin/profile", verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const adminFilter = ObjectId.isValid(userId)
+      ? {
+        $or: [
+          { _id: userId },
+          { _id: new ObjectId(userId) },
+        ],
+        role: "admin",
+      }
+      : {
+        _id: userId,
+        role: "admin",
+      };
+
+    const admin = await db
+      .collection("user")
+      .findOne(adminFilter);
+
+    if (!admin) {
+      return res.status(404).send({
+        success: false,
+        message: "Admin not found.",
+      });
+    }
+
+    return res.status(200).send({
+      success: true,
+      user: {
+        name: admin.name,
+        email: admin.email,
+        image: admin.image || "",
+        role: admin.role,
+        createdAt: admin.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Admin Profile Fetch Error:", error);
+
+    return res.status(500).send({
+      success: false,
+      message: "Failed to fetch admin profile.",
+    });
+  }
+}
+);
+
+app.patch("/admin/profile", verifyToken, verifyActiveUser, verifyAdmin, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, image } = req.body;
+
+    // Validate name
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).send({
+        success: false,
+        message: "Name is required.",
+      });
+    }
+
+    // Validate image
+    if (typeof image !== "string") {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid profile image.",
+      });
+    }
+
+    // Find admin
+    const adminFilter = ObjectId.isValid(userId)
+      ? {
+        $or: [
+          { _id: userId },
+          { _id: new ObjectId(userId) },
+        ],
+        role: "admin",
+      }
+      : {
+        _id: userId,
+        role: "admin",
+      };
+
+    const admin = await db
+      .collection("user")
+      .findOne(adminFilter);
+
+    if (!admin) {
+      return res.status(404).send({
+        success: false,
+        message: "Admin not found.",
+      });
+    }
+
+    // Update admin profile
+    await db.collection("user").updateOne(
+      {
+        _id: admin._id,
+        role: "admin",
+      },
+      {
+        $set: {
+          name: name.trim(),
+          image,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    return res.status(200).send({
+      success: true,
+      message: "Admin profile updated successfully.",
+    });
+  } catch (error) {
+    console.error("Admin Profile Update Error:", error);
+
+    return res.status(500).send({
+      success: false,
+      message: "Failed to update admin profile.",
+    });
+  }
+}
+);
+
+
 
 
 

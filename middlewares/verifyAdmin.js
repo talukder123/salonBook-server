@@ -1,5 +1,9 @@
 const verifyAdmin = (req, res, next) => {
-  if (req.user?.user?.role !== "admin") {
+  console.log("User role:", req.user?.role);
+
+  if (req.user?.role !== "admin") {
+    console.log("ADMIN CHECK FAILED:", req.user?.role);
+
     return res.status(403).json({
       success: false,
       message: "Forbidden access. Admin only.",

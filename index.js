@@ -35,11 +35,10 @@ const db = mongoClient.db("salonBook")
 // Database collections --
 const servicesCollection = db.collection("services")
 const appointmentsCollection = db.collection("appointments");
-const transactionsCollection = db.collection("transactions")
+const transactionsCollection = db.collection("transactions");
 
 
 // http://localhost:5000/services
-
 app.get('/services', async (req, res) => {
   try {
     const { search, category, sort } = req.query;
@@ -89,7 +88,7 @@ app.get('/services', async (req, res) => {
 });
 
 // http://localhost:5000/services
-app.post('/services', async (req, res) => {
+app.post('/services', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const {
       serviceName,
@@ -172,12 +171,14 @@ app.post('/services', async (req, res) => {
 });
 
 // http://localhost:5000/services/:id
-app.patch('/services/:id', async (req, res) => {
+app.patch('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate service ID
     if (!ObjectId.isValid(id)) {
       return res.status(400).send({
+        success: false,
         message: 'Invalid service ID'
       });
     }
@@ -202,66 +203,147 @@ app.patch('/services/:id', async (req, res) => {
       "Spa & Massage",
     ];
 
-    if (category && !categories.includes(category)) {
+    // Validate service name
+    if (
+      serviceName !== undefined &&
+      (typeof serviceName !== 'string' || !serviceName.trim())
+    ) {
       return res.status(400).send({
+        success: false,
+        message: 'Service name cannot be empty'
+      });
+    }
+
+    // Validate category
+    if (
+      category !== undefined &&
+      !categories.includes(category)
+    ) {
+      return res.status(400).send({
+        success: false,
         message: 'Invalid category'
       });
     }
 
+    // Validate description
     if (
-      price !== undefined &&
-      (typeof price !== 'number' || !Number.isFinite(price) || price <= 0)
+      description !== undefined &&
+      (typeof description !== 'string' || !description.trim())
     ) {
       return res.status(400).send({
+        success: false,
+        message: 'Description cannot be empty'
+      });
+    }
+
+    // Validate price
+    if (
+      price !== undefined &&
+      (
+        typeof price !== 'number' ||
+        !Number.isFinite(price) ||
+        price <= 0
+      )
+    ) {
+      return res.status(400).send({
+        success: false,
         message: 'Price must be a positive number'
       });
     }
 
+    // Validate duration
     if (
       duration !== undefined &&
-      (!Number.isInteger(duration) || duration <= 0)
+      (
+        typeof duration !== 'number' ||
+        !Number.isInteger(duration) ||
+        duration <= 0
+      )
     ) {
       return res.status(400).send({
+        success: false,
         message: 'Duration must be a positive integer'
       });
     }
 
-    if (status !== undefined && !['active', 'inactive'].includes(status)) {
+    // Validate image
+    if (
+      image !== undefined &&
+      (typeof image !== 'string' || !image.trim())
+    ) {
       return res.status(400).send({
+        success: false,
+        message: 'Image cannot be empty'
+      });
+    }
+
+    // Validate status
+    if (
+      status !== undefined &&
+      !['active', 'inactive'].includes(status)
+    ) {
+      return res.status(400).send({
+        success: false,
         message: 'Invalid status'
       });
     }
 
+    // Build update object
     const updateData = {};
 
-    if (serviceName !== undefined) updateData.serviceName = serviceName.trim();
-    if (category !== undefined) updateData.category = category;
-    if (description !== undefined) updateData.description = description.trim();
-    if (price !== undefined) updateData.price = price;
-    if (duration !== undefined) updateData.duration = duration;
-    if (image !== undefined) updateData.image = image;
-    if (status !== undefined) updateData.status = status;
+    if (serviceName !== undefined) {
+      updateData.serviceName = serviceName.trim();
+    }
 
+    if (category !== undefined) {
+      updateData.category = category;
+    }
+
+    if (description !== undefined) {
+      updateData.description = description.trim();
+    }
+
+    if (price !== undefined) {
+      updateData.price = price;
+    }
+
+    if (duration !== undefined) {
+      updateData.duration = duration;
+    }
+
+    if (image !== undefined) {
+      updateData.image = image.trim();
+    }
+
+    if (status !== undefined) {
+      updateData.status = status;
+    }
+
+    // Check empty update request
     if (Object.keys(updateData).length === 0) {
       return res.status(400).send({
+        success: false,
         message: 'No fields provided for update'
       });
     }
 
     updateData.updatedAt = new Date();
 
+    // Update service
     const result = await servicesCollection.updateOne(
       { _id: new ObjectId(id) },
       { $set: updateData }
     );
 
-    if (!result.matchedCount) {
+    // Check if service exists
+    if (result.matchedCount === 0) {
       return res.status(404).send({
+        success: false,
         message: 'Service not found'
       });
     }
 
-    res.send({
+    res.status(200).send({
       success: true,
       message: 'Service updated successfully'
     });
@@ -277,7 +359,7 @@ app.patch('/services/:id', async (req, res) => {
 });
 
 // http://localhost:5000/services/:id
-app.delete('/services/:id', async (req, res) => {
+app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 

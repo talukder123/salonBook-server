@@ -39,18 +39,51 @@ const transactionsCollection = db.collection("transactions")
 
 
 // http://localhost:5000/services
+
 app.get('/services', async (req, res) => {
   try {
-    const { category } = req.query;
+    const { search, category, sort } = req.query;
 
-    const filter = category ? { category } : {};
+    // Build filter
+    const filter = {
+      status: "active",
+    };
 
-    const result = await servicesCollection.find(filter).toArray();
+    // Search by service name
+    if (search) {
+      filter.serviceName = {
+        $regex: search,
+        $options: "i",
+      };
+    }
 
-    res.send(result);
+    // Category filtering
+    if (category) {
+      filter.category = category;
+    }
+
+    // Price sorting
+    let sortOption = { createdAt: -1 };
+
+    if (sort === "price-asc") {
+      sortOption = { price: 1 };
+    } else if (sort === "price-desc") {
+      sortOption = { price: -1 };
+    }
+
+    const result = await servicesCollection
+      .find(filter)
+      .sort(sortOption)
+      .toArray();
+
+    res.status(200).send(result);
+
   } catch (error) {
+    console.error("Failed to fetch services:", error);
+
     res.status(500).send({
-      message: "Failed to fetch services"
+      success: false,
+      message: "Failed to fetch services",
     });
   }
 });

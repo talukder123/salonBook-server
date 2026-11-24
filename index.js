@@ -16,12 +16,45 @@ const app = express();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Stripe Webhook 
-app.post(
-  "/stripe-webhook",
-  express.raw({ type: "application/json" }),
+
+
+
+app.post("/stripe-webhook", express.raw({ type: "application/json" }),
   async (req, res) => {
+    console.log("\n🔥 STRIPE WEBHOOK RECEIVED");
+
+    // 1. Validate raw request body
+    if (!Buffer.isBuffer(req.body)) {
+      console.error("Webhook body is not a Buffer.");
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid webhook request body.",
+      });
+    }
+
+    // 2. Validate Stripe signature
     const signature = req.headers["stripe-signature"];
 
+    if (!signature) {
+      console.error("Stripe signature is missing.");
+
+      return res.status(400).json({
+        success: false,
+        message: "Stripe signature is missing.",
+      });
+    }
+
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      console.error("STRIPE_WEBHOOK_SECRET is missing.");
+
+      return res.status(500).json({
+        success: false,
+        message: "Webhook configuration error.",
+      });
+    }
+
+    // 3. Verify webhook signature
     let event;
 
     try {
@@ -30,19 +63,90 @@ app.post(
         signature,
         process.env.STRIPE_WEBHOOK_SECRET
       );
-    } catch (error) {
-      console.error("Webhook signature verification failed:", error.message);
 
-      return res.status(400).send({
+      console.log("✅ Signature verified");
+      console.log("Event type:", event.type);
+      console.log("Event ID:", event.id);
+
+    } catch (error) {
+      console.error("❌ SIGNATURE VERIFICATION FAILED:", error);
+
+      return res.status(400).json({
         success: false,
         message: "Invalid webhook signature.",
       });
     }
 
-    // Webhook event processing will go here.
-    res.status(200).send({ received: true });
+    // 4. Process verified Stripe event
+    try {
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
+
+          console.log("Checkout Session:", session.id);
+          console.log("Payment Status:", session.payment_status);
+          console.log("Session Metadata:", session.metadata);
+
+          if (session.payment_status !== "paid") {
+            console.log("Payment is not completed yet.");
+
+            return res.status(200).json({
+              received: true,
+              message: "Payment is not completed yet.",
+            });
+          }
+
+          const result = await processSuccessfulPayment(session);
+
+          console.log("✅ PAYMENT PROCESSED:", result);
+
+          return res.status(200).json({
+            received: true,
+            ...result,
+          });
+        }
+
+        case "checkout.session.expired": {
+          const session = event.data.object;
+
+          console.log("Expired Session:", session.id);
+          console.log("Session Metadata:", session.metadata);
+
+          const result = await processFailedPayment(session);
+
+          console.log("Expired payment result:", result);
+
+          return res.status(200).json({
+            received: true,
+            ...result,
+          });
+        }
+
+        default: {
+          console.log("Unhandled Stripe event:", event.type);
+
+          return res.status(200).json({
+            received: true,
+            message: "Event received but not handled.",
+          });
+        }
+      }
+
+    } catch (error) {
+      console.error("❌ PAYMENT PROCESSING FAILED");
+      console.error("Error:", error);
+      console.error("Message:", error instanceof Error ? error.message : String(error));
+      console.error("Stack:", error instanceof Error ? error.stack : "No stack available");
+
+      return res.status(500).json({
+        success: false,
+        message: "Webhook processing failed. Stripe may retry this event.",
+      });
+    }
   }
 );
+
+
 
 // middleware!
 app.use(cors({
@@ -80,6 +184,19 @@ await transactionsCollection.createIndex(
 );
 
 const processSuccessfulPayment = async (session) => {
+
+   console.log("========== PAYMENT DEBUG ==========");
+    console.log("Session ID:", session.id);
+    console.log("Session Status:", session.status);
+    console.log("Payment Status:", session.payment_status);
+    console.log("Session Mode:", session.mode);
+    console.log("Currency:", session.currency);
+    console.log("Amount Total:", session.amount_total);
+    console.log("Client Reference ID:", session.client_reference_id);
+    console.log("Metadata:", session.metadata);
+    console.log("===================================");
+
+
   // 1. Verify Stripe payment status
   if (
     session.status !== "complete" ||
@@ -163,11 +280,13 @@ const processSuccessfulPayment = async (session) => {
       }
 
       // Check whether another Stripe session already paid this appointment
-      const existingAppointmentTransaction =
-        await transactionsCollection.findOne(
-          { appointmentId: appointment._id },
-          { session: mongoSession }
-        );
+      const existingAppointmentTransaction = await transactionsCollection.findOne(
+        {
+          appointmentId: appointment._id,
+          status: "paid",
+        },
+        { session: mongoSession }
+      );
 
       if (existingAppointmentTransaction) {
         throw new Error("A transaction already exists for this appointment.");
@@ -223,6 +342,82 @@ const processSuccessfulPayment = async (session) => {
     await mongoSession.endSession();
   }
 };
+
+const processFailedPayment = async (session) => {
+  if (
+    session.status !== "expired" ||
+    session.payment_status === "paid"
+  ) {
+    throw new Error("Invalid or completed payment session.");
+  }
+
+  const { appointmentId, customerId } = session.metadata || {};
+
+  if (
+    !appointmentId ||
+    !customerId ||
+    !ObjectId.isValid(appointmentId)
+  ) {
+    throw new Error("Invalid payment metadata.");
+  }
+
+  if (
+    session.mode !== "payment" ||
+    session.currency !== "bdt" ||
+    session.client_reference_id !== appointmentId
+  ) {
+    throw new Error("Invalid Stripe session details.");
+  }
+
+  const appointment = await appointmentsCollection.findOne({
+    _id: new ObjectId(appointmentId),
+    customerId,
+  });
+
+  if (!appointment) {
+    throw new Error("Appointment not found.");
+  }
+
+  const amount = Number(appointment.servicePrice);
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    session.amount_total !== Math.round(amount * 100)
+  ) {
+    throw new Error("Payment amount does not match.");
+  }
+
+  try {
+    await transactionsCollection.insertOne({
+      appointmentId: appointment._id,
+      customerId,
+      amount,
+      currency: session.currency,
+      stripeSessionId: session.id,
+      status: "failed",
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      message: "Failed payment recorded.",
+    };
+  } catch (error) {
+
+    if (error.code === 11000) {
+      return {
+        success: true,
+        alreadyProcessed: true,
+        message: "Payment attempt already recorded.",
+      };
+    }
+
+    throw error;
+  }
+};
+
+
 
 app.post("/payment/checkout-verify", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
   try {

@@ -1975,6 +1975,69 @@ app.get("/admin/transactions", verifyToken, verifyActiveUser, verifyAdmin,
 );
 
 
+app.get("/customer/dashboard-overview", verifyToken, verifyActiveUser, verifyCustomer, async (req, res) => {
+    try {
+      // Supports the original Better Auth JWT payload
+      const customerId = req.user?.user?.id || req.user?.id;
+
+      if (!customerId) {
+        return res.status(401).send({
+          success: false,
+          message: "Customer ID not found.",
+        });
+      }
+
+      const [stats] = await appointmentsCollection
+        .aggregate([
+          {
+            $match: {
+              customerId: customerId.toString(),
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalAppointments: { $sum: 1 },
+              pendingAppointments: {
+                $sum: {
+                  $cond: [{ $eq: ["$status", "pending"] }, 1, 0],
+                },
+              },
+              confirmedAppointments: {
+                $sum: {
+                  $cond: [{ $eq: ["$status", "confirmed"] }, 1, 0],
+                },
+              },
+              cancelledAppointments: {
+                $sum: {
+                  $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0],
+                },
+              },
+            },
+          },
+        ])
+        .toArray();
+
+      res.status(200).send({
+        success: true,
+        data: stats || {
+          totalAppointments: 0,
+          pendingAppointments: 0,
+          confirmedAppointments: 0,
+          cancelledAppointments: 0,
+        },
+      });
+    } catch (error) {
+      console.error("Customer Dashboard Error:", error);
+
+      res.status(500).send({
+        success: false,
+        message: "Failed to fetch dashboard overview.",
+      });
+    }
+  }
+);
+
 
 
 

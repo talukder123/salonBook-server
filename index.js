@@ -1755,6 +1755,227 @@ app.patch("/admin/profile", verifyToken, verifyActiveUser, verifyAdmin, async (r
 );
 
 
+// Admin Dashboard Overview
+// Admin Dashboard Overview
+app.get("/admin/dashboard-overview", verifyToken, verifyActiveUser, verifyAdmin,
+  async (req, res) => {
+    try {
+      const [
+        customers,
+        services,
+        appointments,
+        transactions,
+      ] = await Promise.all([
+        // Total Registered Customers
+        db.collection("user").countDocuments({
+          role: "user",
+        }),
+
+        // Total Active Services
+        servicesCollection.countDocuments({
+          status: "active",
+        }),
+
+        // Appointment Statistics
+        appointmentsCollection.aggregate([
+          {
+            $facet: {
+              total: [{ $count: "count" }],
+              pending: [
+                { $match: { status: "pending" } },
+                { $count: "count" },
+              ],
+              confirmed: [
+                { $match: { status: "confirmed" } },
+                { $count: "count" },
+              ],
+            },
+          },
+        ]).toArray(),
+
+        // Total Successful Payments
+        transactionsCollection.countDocuments({
+          status: "paid",
+        }),
+      ]);
+
+      const appointmentStats = appointments[0];
+
+      res.status(200).send({
+        success: true,
+        data: {
+          totalCustomers: customers,
+          totalActiveServices: services,
+          totalAppointments: appointmentStats.total[0]?.count || 0,
+          pendingAppointments: appointmentStats.pending[0]?.count || 0,
+          confirmedAppointments: appointmentStats.confirmed[0]?.count || 0,
+          totalSuccessfulPayments: transactions,
+        },
+      });
+
+    } catch (error) {
+      console.error("Dashboard Overview Error:", error);
+
+      res.status(500).send({
+        success: false,
+        message: "Failed to fetch dashboard overview.",
+      });
+    }
+  }
+);
+
+
+
+app.get("/admin/transactions", verifyToken, verifyActiveUser, verifyAdmin,
+  async (req, res) => {
+    try {
+      const transactions = await transactionsCollection
+        .aggregate([
+          // Get customer information
+          {
+            $lookup: {
+              from: "user",
+              let: {
+                customerId: "$customerId",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        { $toString: "$_id" },
+                        { $toString: "$$customerId" },
+                      ],
+                    },
+                  },
+                },
+                {
+                  $project: {
+                    name: 1,
+                    email: 1,
+                  },
+                },
+              ],
+              as: "customer",
+            },
+          },
+          {
+            $unwind: {
+              path: "$customer",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+
+          // Get appointment information
+          {
+            $lookup: {
+              from: "appointments",
+              let: {
+                appointmentId: "$appointmentId",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        { $toString: "$_id" },
+                        { $toString: "$$appointmentId" },
+                      ],
+                    },
+                  },
+                },
+              ],
+              as: "appointment",
+            },
+          },
+          {
+            $unwind: {
+              path: "$appointment",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+
+          // Get related service information
+          {
+            $lookup: {
+              from: "services",
+              let: {
+                serviceId: "$appointment.serviceId",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        { $toString: "$_id" },
+                        { $toString: "$$serviceId" },
+                      ],
+                    },
+                  },
+                },
+                {
+                  $project: {
+                    serviceName: 1,
+                  },
+                },
+              ],
+              as: "service",
+            },
+          },
+          {
+            $unwind: {
+              path: "$service",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+
+          // Final response fields
+          {
+            $project: {
+              customer: {
+                $ifNull: [
+                  "$customer",
+                  { name: "Unknown Customer", email: "N/A" },
+                ],
+              },
+              serviceName: {
+                $ifNull: ["$service.serviceName", "Unknown Service"],
+              },
+              appointmentDate: "$appointment.appointmentDate",
+              amount: 1,
+              currency: 1,
+              stripeSessionId: 1,
+              status: 1,
+              createdAt: 1,
+            },
+          },
+
+          // Latest transactions first
+          {
+            $sort: {
+              createdAt: -1,
+            },
+          },
+        ])
+        .toArray();
+
+      res.status(200).send({
+        success: true,
+        data: transactions,
+      });
+    } catch (error) {
+      console.error("Admin Transactions Error:", error);
+
+      res.status(500).send({
+        success: false,
+        message: "Failed to fetch transactions.",
+      });
+    }
+  }
+);
+
+
+
 
 
 

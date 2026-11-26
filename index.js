@@ -58,10 +58,15 @@ app.post("/stripe-webhook", express.raw({ type: "application/json" }),
     let event;
 
     try {
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+
+      console.log("Webhook secret loaded:", Boolean(webhookSecret));
+      console.log("Webhook secret length:", webhookSecret?.length);
+
       event = stripe.webhooks.constructEvent(
         req.body,
         signature,
-        process.env.STRIPE_WEBHOOK_SECRET
+        webhookSecret
       );
 
       console.log("✅ Signature verified");
@@ -185,16 +190,16 @@ await transactionsCollection.createIndex(
 
 const processSuccessfulPayment = async (session) => {
 
-   console.log("========== PAYMENT DEBUG ==========");
-    console.log("Session ID:", session.id);
-    console.log("Session Status:", session.status);
-    console.log("Payment Status:", session.payment_status);
-    console.log("Session Mode:", session.mode);
-    console.log("Currency:", session.currency);
-    console.log("Amount Total:", session.amount_total);
-    console.log("Client Reference ID:", session.client_reference_id);
-    console.log("Metadata:", session.metadata);
-    console.log("===================================");
+  console.log("========== PAYMENT DEBUG ==========");
+  console.log("Session ID:", session.id);
+  console.log("Session Status:", session.status);
+  console.log("Payment Status:", session.payment_status);
+  console.log("Session Mode:", session.mode);
+  console.log("Currency:", session.currency);
+  console.log("Amount Total:", session.amount_total);
+  console.log("Client Reference ID:", session.client_reference_id);
+  console.log("Metadata:", session.metadata);
+  console.log("===================================");
 
 
   // 1. Verify Stripe payment status
